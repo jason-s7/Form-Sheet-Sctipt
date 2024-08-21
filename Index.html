@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    .row-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .row-item {
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Temporary Responses</h1>
+  <? if (data.length > 1) { ?> <!-- Ensure there's more than just the header row -->
+  <div id="page-container">
+    <? for (var pageIndex = 1; pageIndex < data.length; pageIndex++) { ?>
+      <div class="page" style="display:<?= pageIndex === 1 ? 'block' : 'none' ?>;">
+        <div class="row-container" data-page-index="<?= pageIndex ?>">
+          <? for (var columnIndex = 0; columnIndex < data[pageIndex].length; columnIndex++) { ?>
+            <div class="row-item">
+              <b><?= data[0][columnIndex] ?>:</b> <?= data[pageIndex][columnIndex] ?>
+            </div>
+          <? } ?>
+          <div class="row-item">
+            <button class="approve-btn" onclick="approveResponse(this, <?= pageIndex - 1 ?>)">Approve</button>
+            <button class="reject-btn" onclick="rejectResponse(this, <?= pageIndex - 1 ?>)">Reject</button>
+          </div>
+        </div>
+      </div>
+    <? } ?>
+  </div>
+  <div>
+    <span id="page-indicator">Page <span id="current-page">1</span> of <span id="total-pages"><?= Math.ceil((data.length - 1) / pageSize) ?></span></span>
+    <button id="previous-btn" onclick="previousPage()">Previous</button>
+    <button id="next-btn" onclick="nextPage()">Next</button>
+  </div>
+  <? } else { ?>
+    <p>No data available.</p>
+  <? } ?>
+
+  <script>
+    var currentPage = 1;
+    var pageSize = <?= pageSize ?>;
+    var previousButton = document.getElementById('previous-btn');
+    var nextButton = document.getElementById('next-btn');
+
+    function previousPage() {
+      if (currentPage > 1) {
+        document.querySelectorAll('.page')[currentPage - 1].style.display = 'none';
+        currentPage--;
+        document.querySelectorAll('.page')[currentPage - 1].style.display = 'block';
+        updatePageIndicator();
+      }
+    }
+
+    function nextPage() {
+      if (currentPage < document.querySelectorAll('.page').length) {
+        document.querySelectorAll('.page')[currentPage - 1].style.display = 'none';
+        currentPage++;
+        document.querySelectorAll('.page')[currentPage - 1].style.display = 'block';
+        updatePageIndicator();
+      }
+    }
+
+    function updatePageIndicator() {
+      document.getElementById('current-page').textContent = currentPage;
+      document.getElementById('total-pages').textContent = document.querySelectorAll('.page').length;
+      toggleNavigationButtons();
+    }
+
+    function toggleNavigationButtons() {
+      previousButton.disabled = currentPage === 1;
+      nextButton.disabled = currentPage === document.querySelectorAll('.page').length;
+    }
+
+    function approveResponse(button, rowIndex) {
+      disableButtons(button.closest('.row-container'));
+      disablePageNavigation();
+      google.script.run.withSuccessHandler(function(success) {
+        if (success) {
+          removeRow(button.closest('.page'), rowIndex);
+          enablePageNavigation();
+        }
+      }).approveResponse(rowIndex);
+    }
+
+    function rejectResponse(button, rowIndex) {
+      disableButtons(button.closest('.row-container'));
+      disablePageNavigation();
+      google.script.run.withSuccessHandler(function(success) {
+        if (success) {
+          removeRow(button.closest('.page'), rowIndex);
+          enablePageNavigation();
+        }
+      }).rejectResponse(rowIndex);
+    }
+
+    function disableButtons(row) {
+      var approveBtn = row.querySelector('.approve-btn');
+      var rejectBtn = row.querySelector('.reject-btn');
+      approveBtn.disabled = true;
+      rejectBtn.disabled = true;
+    }
+
+    function disablePageNavigation() {
+      previousButton.disabled = true;
+      nextButton.disabled = true;
+    }
+
+    function enablePageNavigation() {
+      previousButton.disabled = false;
+      nextButton.disabled = false;
+    }
+
+    function removeRow(page, rowIndex) {
+      page.remove();
+
+      // If there are still pages left, adjust the view
+      var remainingPages = document.querySelectorAll('.page');
+      if (remainingPages.length > 0) {
+        if (currentPage > remainingPages.length) {
+          currentPage = remainingPages.length; // Go to the last available page
+        }
+        remainingPages[currentPage - 1].style.display = 'block';
+        updatePageIndicator();
+      } else {
+        // If no pages left, display a message or handle accordingly
+        document.getElementById('page-container').innerHTML = "<p>No more responses to display.</p>";
+        document.querySelector('div').style.display = 'none'; // Hide page navigation buttons
+      }
+    }
+
+    // This function ensures that after a row is approved/rejected, the correct page is displayed
+    function refreshData() {
+      google.script.run.withSuccessHandler(function(data) {
+        var pageContainer = document.getElementById('page-container');
+        pageContainer.innerHTML = ''; // Clear the existing pages
+        currentPage = 1; // Reset the current page
+
+        for (var pageIndex = 1; pageIndex < data.length; pageIndex++) {
+          var pageElement = document.createElement('div');
+          pageElement.className = 'page';
+          pageElement.style.display = pageIndex === 1 ? 'block' : 'none';
+
+          var rowContainerElement = document.createElement('div');
+          rowContainerElement.className = 'row-container';
+          rowContainerElement.setAttribute('data-page-index', pageIndex);
+
+          for (var columnIndex = 0; columnIndex < data[pageIndex].length; columnIndex++) {
+            var rowItemElement = document.createElement('div');
+            rowItemElement.className = 'row-item';
+            rowItemElement.innerHTML = `<b>${data[0][columnIndex]}:</b> ${data[pageIndex][columnIndex]}`;
+            rowContainerElement.appendChild(rowItemElement);
+          }
+
+          var buttonsElement = document.createElement('div');
+          buttonsElement.className = 'row-item';
+          buttonsElement.innerHTML = `
+            <button class="approve-btn" onclick="approveResponse(this, ${pageIndex - 1})">Approve</button>
+            <button class="reject-btn" onclick="rejectResponse(this, ${pageIndex - 1})">Reject</button>
+          `;
+          rowContainerElement.appendChild(buttonsElement);
+
+          pageElement.appendChild(rowContainerElement);
+          pageContainer.appendChild(pageElement);
+        }
+
+        // Check if there are any pages left, and display a message if not
+        var remainingPages = document.querySelectorAll('.page');
+        if (remainingPages.length === 0) {
+          document.getElementById('page-container').innerHTML = "<p>No more responses to display.</p>";
+          document.querySelector('div').style.display = 'none'; // Hide page navigation buttons
+        } else {
+          document.querySelector('div').style.display = 'block'; // Show page navigation buttons
+        }
+        updatePageIndicator(); // Update the page indicator after refresh
+      }).getSheetData();
+    }
+
+    // Initial setup: update navigation buttons based on the initial state
+    toggleNavigationButtons();
+
+  </script>
+</body>
+</html>
